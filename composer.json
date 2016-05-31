@@ -5,5 +5,7 @@
         "psr-0": {
             "SubtitleFinder": "src/"
         }
-    }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable" : true
 }
