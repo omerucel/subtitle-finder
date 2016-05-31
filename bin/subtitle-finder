@@ -1,0 +1,123 @@
+#!/usr/bin/env php
+<?php
+
+$basePath = realpath(__DIR__ . '/../');
+$tmpPath = $basePath . '/tmp';
+include_once ($basePath . '/vendor/autoload.php');
+
+$black = "\e[30m";
+$yellow = "\e[33m";
+$green = "\e[32m";
+$red = "\e[31m";
+$options = getopt('f:l::y::h::ua::', array('file:', 'help::', 'yify', 'lang::', 'user-agent::'));
+if (array_key_exists('help', $options)
+    || array_key_exists('h', $options)
+    || (array_key_exists('f', $options) == false && array_key_exists('file', $options) == false)) {
+    echo "{$yellow}Usage:{$black}\n\tsubtitle-finder [options]\n";
+    echo "\n{$yellow}Options:{$black}\n";
+    echo "\t{$green}-f, --file[=FILE]\t{$black}Movie file.\n";
+    echo "\t{$green}-l, --lang[=LANG]\t{$black}Language code. When yify support enabled, language option is useless. {$yellow}[default: all]{$black}\n";
+    echo "\t{$green}-y, --yify\t{$black}Use yifysubtitles instead of opensubtitles.\n";
+    echo "\t{$green}-ua, --user-agent\t{$black}Registered user-agent for opensubtitles API. {$yellow}[default: OSTestUserAgent]{$black}\n";
+    echo "\t{$green}-h, --help\t{$black}Display this help message.\n\n";
+    echo "{$yellow}Language Codes:{$black}\n";
+    foreach (\SubtitleFinder\Language::getLanguageNames() as $name) {
+        echo "\t{$green}" . $name . ": {$black}" . \SubtitleFinder\Language::getLanguageISO($name) . PHP_EOL;
+    }
+    exit;
+}
+
+$isYifyEnable = array_key_exists('y', $options) || array_key_exists('yify', $options);
+$filePath = array_key_exists('f', $options) ? realpath($options['f']) : realpath($options['file']);
+$language = array_key_exists('lang', $options) ? $options['lang'] : 'all';
+$language = array_key_exists('l', $options) ? $options['l'] : $language;
+$userAgent = array_key_exists('user-agent', $options) ? $options['user-agent'] : 'OSTestUserAgent';
+$userAgent = array_key_exists('ua', $options) ? $options['ua'] : $userAgent;
+if (is_file($filePath) == false || is_readable($filePath) == false) {
+    echo 'Please check file path:' . $filePath . PHP_EOL;
+    exit;
+}
+$client = new \SubtitleFinder\OpenSubtitles\Client();
+$client->setCacheDir($tmpPath);
+$client->setUserAgent($userAgent);
+if ($isYifyEnable) {
+    $movieInfo = $client->getMovieInfo($filePath);
+    if ($movieInfo == null) {
+        echo "{$red}Not found!";
+        exit;
+    }
+    $client = new \SubtitleFinder\Yify\Client();
+    $result = $client->search($movieInfo->getIMDBID());
+
+    if (count($result->getSubtitles()) == 0) {
+        echo 'Not found!' . PHP_EOL;
+        exit;
+    }
+
+    $idCounter = 0;
+    $downloadLinks = array();
+    foreach ($result->getSubtitles() as $languageName => $subtitles) {
+        echo $languageName . PHP_EOL;
+        foreach ($subtitles as $subtitleUrl) {
+            $idCounter++;
+            echo "\t" . $idCounter . ') ' . $subtitleUrl . PHP_EOL;
+            $downloadLinks[$idCounter] = $subtitleUrl;
+        }
+    }
+
+    $selectedId = intval(readline('Select subtitle to download: '));
+    if (isset($downloadLinks[$selectedId])) {
+        echo 'Downloading...' . PHP_EOL;
+        $gzContent = file_get_contents($downloadLinks[$selectedId]);
+        $zipFilePath = $tmpPath . '/subtitle.zip';
+        file_put_contents($zipFilePath, $gzContent);
+        $zip = new \ZipArchive();
+        if ($zip->open($zipFilePath) === true) {
+            $zip->extractTo($tmpPath . '/subtitle');
+            $zip->close();
+        }
+        $files = glob($tmpPath . '/subtitle/*.srt');
+        if (count($files) == 1) {
+            $subtitleFileInfo = pathinfo($files[0]);
+            $filePathInfo = pathinfo($filePath);
+            rename(
+                $files[0],
+                dirname($filePath) . '/' . basename($filePath, '.' . $filePathInfo['extension'])
+                . '.' . $subtitleFileInfo['extension']
+            );
+        }
+        echo 'Done!' . PHP_EOL;
+    }
+} else {
+    $result = $client->search($filePath, $language);
+
+    if (count($result->getSubtitles()) == 0) {
+        echo 'Not found!' . PHP_EOL;
+        exit;
+    }
+
+    /**
+     * @var \SubtitleFinder\OpenSubtitles\Subtitle $subtitle
+     */
+    $idCounter = 0;
+    $downloadLinks = array();
+    foreach ($result->getSubtitles() as $languageName => $subtitles) {
+        echo $languageName . PHP_EOL;
+        foreach ($subtitles as $subtitle) {
+            $idCounter++;
+            echo "\t" . $idCounter . ') ' . trim($subtitle->getMovieReleaseName())
+                . ' (' . $subtitle->getEncoding() . ') (IMDB:' . $subtitle->getIMDBID() . ')' . PHP_EOL;
+            $downloadLinks[$idCounter] = $subtitle;
+        }
+    }
+
+    $selectedId = intval(readline('Select subtitle to download: '));
+    if (isset($downloadLinks[$selectedId])) {
+        echo 'Downloading...' . PHP_EOL;
+        $subtitle = $downloadLinks[$selectedId];
+        $gzContent = file_get_contents($subtitle->getDownloadLink());
+        $fileContent = gzdecode($gzContent);
+        file_put_contents(dirname($filePath) . '/' . basename($filePath) . '.' . $subtitle->getFormat(), $fileContent);
+        echo "{$green}Done!\n";
+    }
+}

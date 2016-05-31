@@ -1,0 +1,9 @@
+{
+    "name": "omerucel/subtitle-finder",
+    "bin": ["bin/subtitle-finder"],
+    "autoload": {
+        "psr-0": {
+            "SubtitleFinder": "src/"
+        }
+    }
+}
