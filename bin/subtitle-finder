@@ -3,7 +3,12 @@
 
 $basePath = realpath(__DIR__ . '/../');
 $tmpPath = $basePath . '/tmp';
-include_once ($basePath . '/vendor/autoload.php');
+
+if (file_exists(realpath(__DIR__ . '/../../../') . '/autoload.php')) {
+    require realpath(__DIR__ . '/../../../') . '/autoload.php';
+} else {
+    require realpath(__DIR__ . '/../vendor/') . '/autoload.php';
+}
 
 $black = "\e[30m";
 $yellow = "\e[33m";
